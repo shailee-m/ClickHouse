@@ -57,7 +57,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
     settings.position_independent_encoding = false;
     settings.max_dictionary_size = 0;
 
-    IDataType::DeserializeBinaryBulkStatePtr state;
+    IDataType::SerializeBinaryBulkStatePtr state;
     type.serializeBinaryBulkStatePrefix(settings, state);
     type.serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
     type.serializeBinaryBulkStateSuffix(settings, state);
