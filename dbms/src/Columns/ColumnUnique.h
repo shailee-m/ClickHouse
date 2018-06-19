@@ -64,7 +64,7 @@ public:
     const ColumnPtr & getNestedColumn() const override;
     size_t uniqueInsert(const Field & x) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
-    ColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
                                                                      size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
@@ -413,7 +413,7 @@ void ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeImpl(
 }
 
 template <typename ColumnType, typename IndexType>
-ColumnPtr ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+MutableColumnPtr ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     auto positions_column = ColumnVector<IndexType>::create(length);
     auto & positions = positions_column->getData();
