@@ -17,7 +17,7 @@ class ColumnWithDictionary final : public COWPtrHelper<IColumn, ColumnWithDictio
 {
     friend class COWPtrHelper<IColumn, ColumnWithDictionary>;
 
-    ColumnWithDictionary(IColumnUnique::MutablePtr && column_unique, MutableColumnPtr && indexes);
+    ColumnWithDictionary(MutableColumnPtr && column_unique, MutableColumnPtr && indexes);
     ColumnWithDictionary(const ColumnWithDictionary & other);
 
 public:
@@ -25,7 +25,7 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWPtrHelper<IColumn, ColumnWithDictionary>;
-    static Ptr create(const IColumnUnique::Ptr & column_unique_, const ColumnPtr & indexes_)
+    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_)
     {
         return ColumnWithDictionary::create(column_unique_->assumeMutable(), indexes_->assumeMutable());
     }
@@ -233,7 +233,7 @@ public:
 
     IColumnUnique * getUnique() { return static_cast<IColumnUnique *>(column_unique->assumeMutable().get()); }
     const IColumnUnique * getUnique() const { return static_cast<const IColumnUnique *>(column_unique->assumeMutable().get()); }
-    const IColumnUnique::Ptr & getUniquePtr() const { return column_unique; }
+    const IColumnUnique::Ptr & getUniquePtr() const { return static_cast<IColumnUnique::Ptr>(column_unique); }
 
     IColumn * getIndexes() { return indexes->assumeMutable().get(); }
     const IColumn * getIndexes() const { return indexes.get(); }
@@ -245,7 +245,7 @@ public:
     bool withDictionary() const override { return true; }
 
 private:
-    IColumnUnique::Ptr column_unique;
+    ColumnPtr column_unique;
     ColumnPtr indexes;
 
 };

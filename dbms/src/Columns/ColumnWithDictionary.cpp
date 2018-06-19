@@ -4,7 +4,7 @@
 namespace DB
 {
 
-ColumnWithDictionary::ColumnWithDictionary(IColumnUnique::MutablePtr && column_unique_, MutableColumnPtr && indexes_)
+ColumnWithDictionary::ColumnWithDictionary(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_)
     : column_unique(std::move(column_unique_)), indexes(std::move(indexes_))
 {
     if (!dynamic_cast<const IColumnUnique *>(column_unique.get()))
