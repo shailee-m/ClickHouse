@@ -535,7 +535,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 
             size_t max_dictionary_size = global_dictionary->size();
             ColumnPtr index_map = mapIndexWithOverflow(*indexes_column, max_dictionary_size);
-            auto used_keys = state_with_dictionary->global_dictionary->getNestedColumn()->index(*index_map, 0);
+            auto used_keys = state_with_dictionary->global_dictionary->getNestedColumn()->index(index_map, 0);
             auto indexes = column_unique->uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
 
             if (additional_keys)
@@ -661,13 +661,13 @@ IColumnUnique::MutablePtr DataTypeWithDictionary::createColumnUnique(const IData
         type = static_cast<const DataTypeNullable &>(keys_type).getNestedType().get();
 
     if (type->isString())
-        return createColumnImpl<ColumnString>();
+        return createColumnUniqueImpl<ColumnString>(keys_type, indexes_type);
     if (type->isFixedString())
-        return createColumnImpl<ColumnFixedString>();
+        return createColumnUniqueImpl<ColumnFixedString>(keys_type, indexes_type);
     if (typeid_cast<const DataTypeDate *>(type))
-        return createColumnImpl<ColumnVector<UInt16>>();
+        return createColumnUniqueImpl<ColumnVector<UInt16>>(keys_type, indexes_type);
     if (typeid_cast<const DataTypeDateTime *>(type))
-        return createColumnImpl<ColumnVector<UInt32>>();
+        return createColumnUniqueImpl<ColumnVector<UInt32>>(keys_type, indexes_type);
     if (type->isNumber())
     {
         IColumnUnique::MutablePtr column;
