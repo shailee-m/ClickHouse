@@ -119,7 +119,7 @@ struct IndexesSerializationType
     static void checkType(SerializationType type)
     {
         UInt64 value = resetFlags(type);
-        if (TUInt8 <= value && value <= TUInt64)
+        if (value <= TUInt64)
             return;
 
         throw Exception("Invalid type for DataTypeWithDictionary index column.", ErrorCodes::LOGICAL_ERROR);
@@ -246,7 +246,8 @@ void DataTypeWithDictionary::serializeBinaryBulkStatePrefix(
 
     writeIntBinary(key_version, *stream);
 
-    auto column_unique = static_cast<ColumnWithDictionary &>(*createColumn()).assumeMutable();
+    auto column_with_dictionary = createColumn();
+    auto column_unique = static_cast<ColumnWithDictionary &>(*column_with_dictionary).assumeMutable();
     state = std::make_shared<SerializeStateWithDictionary>(key_version, std::move(column_unique));
 }
 
@@ -486,7 +487,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
     if (!indexes_stream)
         throw Exception("Got empty stream for DataTypeWithDictionary indexes.", ErrorCodes::LOGICAL_ERROR);
 
-    auto readDictionary = [state_with_dictionary, keys_stream]()
+    auto readDictionary = [this, state_with_dictionary, keys_stream, &column_with_dictionary]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *keys_stream);
