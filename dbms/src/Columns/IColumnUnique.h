@@ -24,7 +24,18 @@ public:
     virtual size_t uniqueInsertFrom(const IColumn & src, size_t n) = 0;
     /// Appends range of elements from other column.
     /// Could be used to concatenate columns.
-    virtual ColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length, size_t max_dictionary_size = 0) = 0;
+    virtual ColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+
+    struct IndexesWithOverflow
+    {
+        MutableColumnPtr indexes;
+        MutableColumnPtr overflowed_keys;
+    };
+    /// Like uniqueInsertRangeFrom, but doesn't insert keys if inner dictionary has more than max_dictionary_size keys.
+    /// Keys that won't be inserted into dictionary will be into overflowed_keys, indexes will be calculated for
+    /// concatenation of nested column (which can be got from getNestedColumn() function) and overflowed_keys.
+    virtual IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start,
+                                                              size_t length, size_t max_dictionary_size) = 0;
 
     /// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
     /// Is used to optimize some computations (in aggregation, for example).

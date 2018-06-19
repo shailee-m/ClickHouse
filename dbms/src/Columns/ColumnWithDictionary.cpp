@@ -4,8 +4,8 @@
 namespace DB
 {
 
-ColumnWithDictionary::ColumnWithDictionary(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_)
-        : column_unique(std::move(column_unique_)), indexes(std::move(indexes_))
+ColumnWithDictionary::ColumnWithDictionary(IColumnUnique::MutablePtr && column_unique_, MutableColumnPtr && indexes_)
+    : column_unique(std::move(column_unique_)), indexes(std::move(indexes_))
 {
     if (!dynamic_cast<const IColumnUnique *>(column_unique.get()))
         throw Exception("ColumnUnique expected as argument of ColumnWithDictionary.", ErrorCodes::ILLEGAL_COLUMN);

@@ -154,6 +154,16 @@ void DataTypeArray::enumerateStreams(const StreamCallback & callback, SubstreamP
 }
 
 
+void DataTypeArray::serializeBinaryBulkStatePrefix(
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    settings.path.push_back(Substream::ArrayElements);
+    nested->serializeBinaryBulkStatePrefix(settings, state);
+    settings.path.pop_back();
+}
+
+
 void DataTypeArray::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const

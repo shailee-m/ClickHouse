@@ -95,70 +95,108 @@ struct  KeysSerializationVersion
     KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
 };
 
-enum class IndexesSerializationType
+struct IndexesSerializationType
 {
-    UInt8 = 0,
-    UInt16,
-    UInt32,
-    UInt64,
+    using SerializationType = UInt64;
+    static constexpr UInt64 HasAdditionalKeysBit = 1u << 8u;
 
-    UInt8WithAdditionalKeys = 256,
-    UInt16WithAdditionalKeys,
-    UInt32WithAdditionalKeys,
-    UInt64WithAdditionalKeys,
+    enum Type
+    {
+        UInt8 = 0,
+        UInt16,
+        UInt32,
+        UInt64,
+    };
+
+    Type type;
+    bool has_additional_keys;
+
+    static constexpr SerializationType resetFlags(SerializationType type)
+    {
+        return type & (~(HasAdditionalKeysBit));
+    }
+
+    static void checkType(SerializationType type)
+    {
+        UInt64 value = resetFlags(type);
+        if (UInt8 <= value && value <= UInt64)
+            return;
+
+        throw Exception("Invalid type for DataTypeWithDictionary index column.", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    void serialize(WriteBuffer & buffer) const
+    {
+        SerializationType val = type;
+        if (has_additional_keys)
+            val |= HasAdditionalKeysBit;
+        writeIntBinary(val, buffer);
+    }
+
+    void deserialize(ReadBuffer & buffer)
+    {
+        SerializationType val;
+        readIntBinary(val, buffer);
+        checkType(val);
+        has_additional_keys = (val & HasAdditionalKeysBit) != 0;
+        type = static_cast<Type>(resetFlags(val));
+    }
+
+    IndexesSerializationType(const IDataType & data_type, bool has_additional_keys)
+        : has_additional_keys(has_additional_keys)
+    {
+        if (typeid_cast<const DataTypeUInt8 *>(&data_type))
+            type = IndexesSerializationType::UInt8;
+        else if (typeid_cast<const DataTypeUInt16 *>(&data_type))
+            type = IndexesSerializationType::UInt16;
+        else if (typeid_cast<const DataTypeUInt32 *>(&data_type))
+            type = IndexesSerializationType::UInt32;
+        else if (typeid_cast<const DataTypeUInt64 *>(&data_type))
+            type = IndexesSerializationType::UInt64;
+        else
+            throw Exception("Invalid DataType for IndexesSerializationType. Expected UInt*, got " + data_type.getName(),
+                            ErrorCodes::LOGICAL_ERROR);
+    }
+
+    IDataType getDataType() const
+    {
+        if (type == UInt8)
+            return DataTypeUInt8();
+        if (type == UInt16)
+            return DataTypeUInt16();
+        if (type == UInt32)
+            return DataTypeUInt32();
+        if (type == UInt64)
+            return DataTypeUInt64();
+
+        throw Exception("Can't create DataType from IndexesSerializationType.", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    IndexesSerializationType() = default;
 };
-
-IndexesSerializationType dataTypeToIndexesSerializationType(const IDataType & type, bool with_additional_keys)
-{
-    if (with_additional_keys)
-    {
-        if (typeid_cast<const DataTypeUInt8 *>(&type))
-            return IndexesSerializationType::UInt8WithAdditionalKeys;
-        if (typeid_cast<const DataTypeUInt16 *>(&type))
-            return IndexesSerializationType::UInt16WithAdditionalKeys;
-        if (typeid_cast<const DataTypeUInt32 *>(&type))
-            return IndexesSerializationType::UInt32WithAdditionalKeys;
-        if (typeid_cast<const DataTypeUInt64 *>(&type))
-            return IndexesSerializationType::UInt64WithAdditionalKeys;
-    }
-    else
-    {
-        if (typeid_cast<const DataTypeUInt8 *>(&type))
-            return IndexesSerializationType::UInt8;
-        if (typeid_cast<const DataTypeUInt16 *>(&type))
-            return IndexesSerializationType::UInt16;
-        if (typeid_cast<const DataTypeUInt32 *>(&type))
-            return IndexesSerializationType::UInt32;
-        if (typeid_cast<const DataTypeUInt64 *>(&type))
-            return IndexesSerializationType::UInt64;
-    }
-
-    throw Exception("Invalid DataType for IndexesSerializationType. Expected UInt*, got " + type.getName(),
-                    ErrorCodes::LOGICAL_ERROR);
-}
 
 struct SerializeStateWithDictionary : public IDataType::SerializeBinaryBulkState
 {
     KeysSerializationVersion key_version;
-    IColumnUnique::MutablePtr column_unique;
+    IColumnUnique::MutablePtr global_dictionary;
 
     explicit SerializeStateWithDictionary(
         UInt64 key_version,
         IColumnUnique::MutablePtr && column_unique)
         : key_version(key_version)
-        , column_unique(std::move(column_unique)) {}
+        , global_dictionary(std::move(column_unique)) {}
 };
 
 struct DeserializeStateWithDictionary : public IDataType::DeserializeBinaryBulkState
 {
     KeysSerializationVersion key_version;
-    IColumnUnique::MutablePtr column_unique;
+    IColumnUnique::Ptr global_dictionary;
+    UInt64 num_bytes_in_dictionary;
 
-    explicit DeserializeStateWithDictionary(
-        UInt64 key_version,
-        IColumnUnique::MutablePtr && column_unique)
-        : key_version(key_version)
-        , column_unique(std::move(column_unique)) {}
+    MutableColumnPtr additional_keys;
+    UInt64 num_pending_rows = 0;
+
+    explicit DeserializeStateWithDictionary(UInt64 key_version) : key_version(key_version) {}
 };
 
 static SerializeStateWithDictionary * checkAndGetWithDictionarySerializeState(
@@ -191,32 +229,26 @@ static DeserializeStateWithDictionary * checkAndGetWithDictionaryDeserializeStat
     return with_dictionary_state;
 }
 
-//
-//void DataTypeWithDictionary::serializeBinaryBulkStatePrefix(OutputStreamGetter getter, SubstreamPath path) const
-//{
-//    path.push_back(Substream::DictionaryKeys);
-//    auto * stream = getter(path);
-//
-//    if (!stream)
-//        throw Exception("Got empty stream in DataTypeWithDictionary::serializeBinaryBulkStatePrefix",
-//                        ErrorCodes::LOGICAL_ERROR);
-//
-//    /// TODO: select serialization method here.
-//    KeysSerializationVersion keys_ser_version = KeysSerializationVersion::DictionaryPerGranule;
-//    IndexesSerializationType indexes_ser_type = dataTypeToIndexesSerializationType(*indexes_type);
-//
-//    auto keys_ser_version_val = static_cast<UInt32>(keys_ser_version);
-//    auto indexes_ser_type_val = static_cast<UInt32>(indexes_ser_type);
-//
-//    writeIntBinary(keys_ser_version_val, *stream);
-//    writeIntBinary(indexes_ser_type_val, *stream);
-//
-//    path.push_back(IDataType::Substream::DictionaryKeys);
-//    auto keys_state = dictionary_type->serializeBinaryBulkStatePrefix(getter, path);
-//    return std::make_shared<SerializeStateWithDictionaryPerGranule>(
-//            std::move(keys_state), keys_ser_version, indexes_ser_type);
-//}
+void DataTypeWithDictionary::serializeBinaryBulkStatePrefix(
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    settings.path.push_back(Substream::DictionaryKeys);
+    auto * stream = settings.getter(settings.path);
+    settings.path.pop_back();
 
+    if (!stream)
+        throw Exception("Got empty stream in DataTypeWithDictionary::serializeBinaryBulkStatePrefix",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    /// Write version and create SerializeBinaryBulkState.
+    UInt64 key_version = KeysSerializationVersion::SingleDictionaryWithAdditionalKeysPerBlock;
+
+    writeIntBinary(key_version, *stream);
+
+    auto column_unique = static_cast<ColumnWithDictionary &>(*createColumn()).assumeMutable();
+    state = std::make_shared<SerializeStateWithDictionary>(key_version, std::move(column_unique));
+}
 
 void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
@@ -225,7 +257,7 @@ void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
     auto * state_with_dictionary = checkAndGetWithDictionarySerializeState(state);
     KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
 
-    if (state_with_dictionary->column_unique)
+    if (state_with_dictionary->global_dictionary)
     {
         settings.path.push_back(Substream::DictionaryKeys);
         auto * stream = settings.getter(settings.path);
@@ -235,14 +267,14 @@ void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
             throw Exception("Got empty stream in DataTypeWithDictionary::serializeBinaryBulkStateSuffix",
                             ErrorCodes::LOGICAL_ERROR);
 
-        auto unique_state = state_with_dictionary->column_unique->getSerializableState();
+        auto unique_state = state_with_dictionary->global_dictionary->getSerializableState();
         dictionary_type->serializeBinaryBulk(*unique_state.column, *stream, unique_state.offset, unique_state.limit);
     }
 }
 
 void DataTypeWithDictionary::deserializeBinaryBulkStatePrefix(
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::DictionaryKeys);
     auto * stream = settings.getter(settings.path);
@@ -255,8 +287,97 @@ void DataTypeWithDictionary::deserializeBinaryBulkStatePrefix(
     UInt64 keys_version;
     readIntBinary(keys_version, *stream);
 
-    auto column_unique = static_cast<ColumnWithDictionary &>(*createColumn()).assumeMutable();
-    state = std::make_shared<DeserializeStateWithDictionary>(keys_version, std::move(column_unique));
+    state = std::make_shared<DeserializeStateWithDictionary>(keys_version);
+}
+
+namespace
+{
+    template <typename T>
+    PaddedPODArray<T> * getIndexesData(IColumn & indexes)
+    {
+        auto * column = typeid_cast<ColumnVector<T> *>(&indexes);
+        if (column)
+            return &column->getData();
+
+        return nullptr;
+    }
+
+    template <typename T>
+    MutableColumnPtr mapUniqueIndexImpl(PaddedPODArray<T> & index)
+    {
+        HashMap<T, T> hash_map;
+        for (auto val : index)
+            hash_map.insert({val, hash_map.size()});
+
+        auto res_col = ColumnVector<T>::create();
+        auto & data = res_col->getData();
+
+        data.resize(hash_map.size());
+        for (auto val : hash_map)
+            data[val.second] = val.first;
+
+        for (auto & ind : index)
+            ind = hash_map[ind];
+
+        return std::move(res_col);
+    }
+
+    /// Returns unique values of column. Write new index to column.
+    MutableColumnPtr mapUniqueIndex(IColumn & column)
+    {
+        if (auto * data_uint8 = getIndexesData<UInt8>(column))
+            return mapUniqueIndexImpl(*data_uint8);
+        else if (auto * data_uint16 = getIndexesData<UInt16>(column))
+            return mapUniqueIndexImpl(*data_uint16);
+        else if (auto * data_uint32 = getIndexesData<UInt32>(column))
+            return mapUniqueIndexImpl(*data_uint32);
+        else if (auto * data_uint64 = getIndexesData<UInt64>(column))
+            return mapUniqueIndexImpl(*data_uint64);
+        else
+            throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got" + column.getName(),
+                            ErrorCodes::LOGICAL_ERROR);
+    }
+
+    template <typename T>
+    MutableColumnPtr mapIndexWithOverflow(PaddedPODArray<T> & index, size_t max_val)
+    {
+        HashMap<T, T> hash_map;
+        HashMap<T, T> hash_map_with_overflow;
+
+        for (auto val : index)
+        {
+            auto & map = val < max_val ? hash_map : hash_map_with_overflow;
+            map.insert({val, map.size()});
+        }
+
+        auto index_map_col = ColumnVector<T>::create();
+        auto & index_data = index_map_col->getData();
+
+        index_data.resize(hash_map.size());
+        for (auto val : hash_map)
+            index_data[val.second] = val.first;
+
+        for (auto & val : index)
+            val = val < max_val ? hash_map[val]
+                                : hash_map_with_overflow[val] + hash_map.size();
+
+        return index_map_col;
+    }
+
+    MutableColumnPtr mapIndexWithOverflow(IColumn & column, size_t max_size)
+    {
+        if (auto * data_uint8 = getIndexesData<UInt8>(column))
+            return mapIndexWithOverflow(*data_uint8, max_size);
+        else if (auto * data_uint16 = getIndexesData<UInt16>(column))
+            return mapIndexWithOverflow(*data_uint16, max_size);
+        else if (auto * data_uint32 = getIndexesData<UInt32>(column))
+            return mapIndexWithOverflow(*data_uint32, max_size);
+        else if (auto * data_uint64 = getIndexesData<UInt64>(column))
+            return mapIndexWithOverflow(*data_uint64, max_size);
+        else
+            throw Exception("Indexes column for makeIndexWithOverflow must be ColumnUInt, got" + column.getName(),
+                            ErrorCodes::LOGICAL_ERROR);
+    }
 }
 
 void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
@@ -283,21 +404,11 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
 
     const ColumnWithDictionary & column_with_dictionary = typeid_cast<const ColumnWithDictionary &>(column);
 
-    if (!state)
-    {
-        /// Write version and create SerializeBinaryBulkState.
-        UInt64 key_version = KeysSerializationVersion::SingleDictionaryWithAdditionalKeysPerBlock;
-
-        writeIntBinary(key_version, *keys_stream);
-
-        auto column_unique = static_cast<ColumnWithDictionary &>(*createColumn()).assumeMutable();
-        state = std::make_shared<SerializeStateWithDictionary>(key_version, std::move(column_unique));
-    }
-
     auto * state_with_dictionary = checkAndGetWithDictionarySerializeState(state);
+    auto & global_dictionary = state_with_dictionary->global_dictionary;
     KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
 
-    auto unique_state = state_with_dictionary->column_unique->getSerializableState();
+    auto unique_state = global_dictionary->getSerializableState();
     bool was_global_dictionary_written = unique_state.limit >= settings.max_dictionary_size;
 
     const auto & indexes = column_with_dictionary.getIndexesPtr();
@@ -308,32 +419,28 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
 
     /// Create pair (used_keys, sub_index) which is the dictionary for [offset, offset + limit) range.
     MutableColumnPtr sub_index = (*indexes->cut(offset, limit)).mutate();
-    ColumnPtr unique_indexes = makeSubIndex(*sub_index);
+    ColumnPtr unique_indexes = mapUniqueIndex(*sub_index);
     /// unique_indexes->index(sub_index) == indexes[offset:offset + limit]
     MutableColumnPtr used_keys = (*keys->index(unique_indexes, 0)).mutate();
 
     if (settings.max_dictionary_size)
     {
         /// Insert used_keys into global dictionary and update sub_index.
-        auto global_indexes = state_with_dictionary->column_unique->uniqueInsertRangeFrom(
-                *used_keys, 0, used_keys->size(), settings.max_dictionary_size);
-
-        /// TODO: filter indexes > settings.max_dictionary_size
-
-        sub_index = (*global_indexes->index(std::move(sub_index), 0)).mutate();
-
-        /// TODO
+        auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*used_keys, 0, used_keys->size(),
+                                                                                      settings.max_dictionary_size);
+        sub_index = std::move(indexes_with_overflow.indexes);
+        used_keys = std::move(indexes_with_overflow.overflowed_keys);
     }
 
-    /// Check is we need to write additional keys.
-    unique_state = state_with_dictionary->column_unique->getSerializableState();
-    bool need_additional_keys = unique_state.limit > settings.max_dictionary_size;
+    bool need_additional_keys = !used_keys->empty();
+    bool need_write_dictionary = !was_global_dictionary_written && unique_state.limit >= settings.max_dictionary_size;
 
-    auto index_version = dataTypeToIndexesSerializationType(*indexes_type, need_additional_keys);
-    auto index_version_value = static_cast<UInt64>(index_version);
-    writeIntBinary(index_version, *indexes_stream);
+    IndexesSerializationType index_version(*indexes_type, need_additional_keys);
+    index_version.serialize(*indexes_stream);
 
-    if (!was_global_dictionary_written && unique_state.limit >= settings.max_dictionary_size)
+    unique_state = global_dictionary->getSerializableState();
+
+    if (need_write_dictionary)
     {
         /// Write global dictionary if it wasn't written and has too many keys.
         UInt64 num_keys = settings.max_dictionary_size;
@@ -343,161 +450,130 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
 
     if (need_additional_keys)
     {
-        UInt64 num_keys = unique_state.limit - settings.max_dictionary_size;
-        writeIntBinary(num_keys, *keys_stream);
-        auto additional_offset = unique_state.offset + settings.max_dictionary_size;
-        dictionary_type->serializeBinaryBulk(*unique_state.column, *keys_stream, additional_offset, num_keys);
+        UInt64 num_keys = used_keys->size();
+        writeIntBinary(num_keys, *indexes_stream);
+        dictionary_type->serializeBinaryBulk(*used_keys, *indexes_stream, 0, num_keys);
     }
 
-    indexes_type->serializeBinaryBulk(*sub_index, *indexes_stream, 0, 0);
+    UInt64 num_rows = sub_index->size();
+    writeIntBinary(num_rows, *indexes_stream);
+    indexes_type->serializeBinaryBulk(*sub_index, *indexes_stream, 0, num_rows);
 }
 
 void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
-        InputStreamGetter getter,
-        size_t limit,
-        double /*avg_value_size_hint*/,
-        bool position_independent_encoding,
-        SubstreamPath path,
-        const DeserializeBinaryBulkStatePtr & state) const
+    IColumn & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state) const
 {
     ColumnWithDictionary & column_with_dictionary = typeid_cast<ColumnWithDictionary &>(column);
 
-    auto * dict_state = dynamic_cast<DeserializeBinaryBulkStateWithDictionary *>(state.get());
-    if (!dict_state)
-        throw Exception("Invalid DeserializeBinaryBulkState.", ErrorCodes::LOGICAL_ERROR);
+    auto * state_with_dictionary = checkAndGetWithDictionaryDeserializeState(state);
+    KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
 
-    if (dict_state->key_version != KeysSerializationVersion::DictionaryPerGranule)
-        throw Exception("Unsupported KeysSerializationVersion for DataTypeWithDictionary", ErrorCodes::LOGICAL_ERROR);
+    settings.path.push_back(Substream::DictionaryKeys);
+    auto * keys_stream = settings.getter(settings.path);
+    settings.path.back() = Substream::DictionaryIndexes;
+    auto * indexes_stream = settings.getter(settings.path);
+    settings.path.pop_back();
 
-    auto * dict_state_per_granule = typeid_cast<DeserializeStateWithDictionaryPerGranule *>(dict_state);
+    if (!keys_stream && !indexes_stream)
+        return;
 
-    auto readIndexes = [&](ReadBuffer * stream, const ColumnPtr & index, size_t num_rows)
-    {
-        auto index_col = indexes_type->createColumn();
-        indexes_type->deserializeBinaryBulk(*index_col, *stream, num_rows, 0);
-        column_with_dictionary.getIndexes()->insertRangeFrom(*index->index(std::move(index_col), 0), 0, num_rows);
-    };
+    if (!keys_stream)
+        throw Exception("Got empty stream for DataTypeWithDictionary keys.", ErrorCodes::LOGICAL_ERROR);
 
-    using CachedStreams = std::unordered_map<std::string, ReadBuffer *>;
-    CachedStreams cached_streams;
+    if (!indexes_stream)
+        throw Exception("Got empty stream for DataTypeWithDictionary indexes.", ErrorCodes::LOGICAL_ERROR);
 
-    IDataType::InputStreamGetter cached_stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
-    {
-        std::string stream_name = IDataType::getFileNameForStream("", path);
-        auto iter = cached_streams.find(stream_name);
-        if (iter == cached_streams.end())
-            iter = cached_streams.insert({stream_name, getter(path)}).first;
-        return iter->second;
-    };
-
-    auto readDict = [&](UInt64 num_keys)
-    {
-        auto dict_column = dictionary_type->createColumn();
-        dictionary_type->deserializeBinaryBulkWithMultipleStreams(
-                *dict_column, cached_stream_getter, num_keys, 0,
-                position_independent_encoding, path, dict_state->keys_state);
-        return column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, num_keys);
-    };
-
-    path.push_back(Substream::DictionaryKeys);
-    if (auto stream = cached_stream_getter(path))
+    auto readDictionary = [state_with_dictionary, keys_stream]()
     {
         UInt64 num_keys;
-        readIntBinary(num_keys, *stream);
+        readIntBinary(num_keys, *keys_stream);
 
-        auto dict_column = dictionary_type->createColumn();
-        dictionary_type->deserializeBinaryBulkWithMultipleStreams(
-                *dict_column, cached_stream_getter, num_keys, 0,
-                position_independent_encoding, path, dict_state->keys_state);
+        auto keys_type = removeNullable(dictionary_type);
+        auto global_dict_keys = keys_type->createColumn();
+        keys_type->deserializeBinaryBulk(*global_dict_keys, *keys_stream, num_keys, 0);
 
-        dict_state_per_granule->column_unique = std::move(dict_column);
-    }
+        auto dict_column = createColumn();
+        auto & dict_column_with_dictionary = static_cast<ColumnWithDictionary &>(*dict_column);
+        dict_column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*global_dict_keys, 0, num_keys);
+        state_with_dictionary->global_dictionary = column_with_dictionary.getUniquePtr();
+    };
 
-
-    path.push_back(Substream::DictionaryIndexes);
-
-    if (auto stream = getter(path))
+    auto readAdditionalKeys = [state_with_dictionary, indexes_stream]()
     {
-        path.back() = Substream::DictionaryKeys;
+        UInt64 num_keys;
+        readIntBinary(num_keys, *indexes_stream);
+        auto keys_type = removeNullable(dictionary_type);
+        state_with_dictionary->additional_keys = keys_type->createColumn();
+        keys_type->deserializeBinaryBulk(*state_with_dictionary->additional_keys, *indexes_stream, num_keys, 0);
+    };
 
-        while (limit)
+    auto readIndexes = [state_with_dictionary, indexes_stream, &column_with_dictionary](UInt64 num_rows)
+    {
+        MutableColumnPtr indexes_column = indexes_type->createColumn();
+        indexes_type->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
+
+        auto & global_dictionary = state_with_dictionary->global_dictionary;
+
+        bool has_additional_keys = state_with_dictionary->additional_keys != nullptr;
+        bool column_is_empty = column_with_dictionary.empty();
+        bool column_with_global_dictionary = column_with_dictionary.getUnique() == global_dictionary.get();
+
+        if (!has_additional_keys && (column_is_empty || column_with_global_dictionary))
         {
-            if (dict_state_per_granule->num_rows_to_read_until_next_index == 0)
-            {
-                if (stream->eof())
-                    break;
+            if (column_is_empty)
+                column_with_dictionary.setUnique(global_dictionary);
 
-                UInt64 num_keys;
-                readIntBinary(num_keys, *stream);
-                readIntBinary(dict_state_per_granule->num_rows_to_read_until_next_index, *stream);
-                dict_state_per_granule->column_unique = readDict(num_keys);
-            }
-
-            size_t num_rows_to_read = std::min(limit, dict_state_per_granule->num_rows_to_read_until_next_index);
-            readIndexes(stream, dict_state_per_granule->column_unique, num_rows_to_read);
-            limit -= num_rows_to_read;
-            dict_state_per_granule->num_rows_to_read_until_next_index -= num_rows_to_read;
+            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes_column, 0, num_rows);
         }
+        else
+        {
+            auto * column_unique = column_with_dictionary.getUnique();
+            const auto & additional_keys = state_with_dictionary->additional_keys;
+
+            size_t max_dictionary_size = global_dictionary->size();
+            auto index_map = mapIndexWithOverflow(*indexes_column, max_dictionary_size);
+            auto used_keys = state_with_dictionary->global_dictionary->getNestedColumn()->index(*index_map, 0);
+            auto indexes = column_unique->uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
+
+            if (additional_keys)
+            {
+                size_t num_keys = additional_keys->size();
+                auto additional_indexes = column_unique->uniqueInsertRangeFrom(*additional_keys, 0, num_keys);
+                indexes->insertRangeFrom(*additional_indexes, 0, num_keys);
+            }
+            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes_column->index(indexes, 0), 0, num_rows);
+        }
+    };
+
+    while (limit)
+    {
+        if (state_with_dictionary->num_pending_rows == 0)
+        {
+            if (indexes_stream->eof())
+                break;
+
+            IndexesSerializationType index_version;
+            index_version.deserialize(*indexes_stream);
+
+            if (!state_with_dictionary->global_dictionary)
+                readDictionary();
+
+            if (index_version.has_additional_keys)
+                readAdditionalKeys();
+            else
+                state_with_dictionary->additional_keys = nullptr;
+
+            readIntBinary(state_with_dictionary->num_pending_rows, *indexes_stream);
+        }
+
+        size_t num_rows_to_read = std::min(limit, state_with_dictionary->num_pending_rows);
+        readIndexes(num_rows_to_read);
+        limit -= num_rows_to_read;
+        state_with_dictionary->num_pending_rows -= num_rows_to_read;
     }
-}
-
-void DataTypeWithDictionary::serializeBinaryBulkFromSingleColumn(
-        const IColumn & column,
-        WriteBuffer & ostr,
-        size_t offset,
-        size_t limit,
-        bool position_independent_encoding) const
-{
-    const auto & column_with_dictionary = static_cast<const ColumnWithDictionary &>(column);
-
-    size_t max_limit = column.size() - offset;
-    limit = limit ? std::min(limit, max_limit) : max_limit;
-
-    const auto & indexes = column_with_dictionary.getIndexesPtr();
-    const auto & keys = column_with_dictionary.getUnique()->getNestedColumn();
-    MutableColumnPtr sub_index = (*indexes->cut(offset, limit)).mutate();
-    ColumnPtr unique_indexes = makeSubIndex(*sub_index);
-    /// unique_indexes->index(sub_index) == indexes[offset:offset + limit]
-    auto used_keys = keys->index(unique_indexes, 0);
-    /// (used_keys, sub_index) is ColumnWithDictionary for range [offset:offset + limit]
-
-    UInt64 used_keys_size = used_keys->size();
-    writeIntBinary(used_keys_size, ostr);
-
-    auto indexes_ser_type = static_cast<UInt32>(dataTypeToIndexesSerializationType(*indexes_type));
-    writeIntBinary(indexes_ser_type, ostr);
-
-    dictionary_type->serializeBinaryBulkFromSingleColumn(*used_keys, ostr, 0, 0, position_independent_encoding);
-    indexes_type->serializeBinaryBulk(*sub_index, ostr, 0, limit);
-}
-
-void DataTypeWithDictionary::deserializeBinaryBulkToSingleColumn(
-        IColumn & column,
-        ReadBuffer & istr,
-        size_t limit,
-        double /*avg_value_size_hint*/,
-        bool position_independent_encoding) const
-{
-    ColumnWithDictionary & column_with_dictionary = typeid_cast<ColumnWithDictionary &>(column);
-    UInt64 keys_size;
-    readIntBinary(keys_size, istr);
-    UInt32 indexes_ser_type_val;
-    readIntBinary(indexes_ser_type_val, istr);
-
-    auto indexes_ser_type = static_cast<IndexesSerializationType>(indexes_ser_type_val);
-    auto expected_index_typ = dataTypeToIndexesSerializationType(*indexes_type);
-    if (indexes_ser_type != expected_index_typ)
-        throw Exception("Invalid index type for DataTypeWithDictionary: " + toString(indexes_ser_type_val),
-                        ErrorCodes::LOGICAL_ERROR);
-
-    auto keys = dictionary_type->createColumn();
-    dictionary_type->deserializeBinaryBulkToSingleColumn(*keys, istr, keys_size, 0, position_independent_encoding);
-    auto indexes = indexes_type->createColumn();
-    indexes_type->deserializeBinaryBulk(*indexes, istr, limit, 0);
-
-    auto idx = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*keys, 0, keys_size);
-    column_with_dictionary.getIndexes()->insertRangeFrom(*idx->index(ColumnPtr(std::move(indexes)), 0), 0, indexes->size());
 }
 
 void DataTypeWithDictionary::serializeBinary(const Field & field, WriteBuffer & ostr) const

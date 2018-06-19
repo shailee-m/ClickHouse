@@ -47,6 +47,16 @@ void DataTypeNullable::enumerateStreams(const StreamCallback & callback, Substre
 }
 
 
+void DataTypeNullable::serializeBinaryBulkStatePrefix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const
+{
+    settings.path.push_back(Substream::NullableElements);
+    nested_data_type->serializeBinaryBulkStatePrefix(settings, state);
+    settings.path.pop_back();
+}
+
+
 void DataTypeNullable::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
@@ -58,8 +68,8 @@ void DataTypeNullable::serializeBinaryBulkStateSuffix(
 
 
 void DataTypeNullable::deserializeBinaryBulkStatePrefix(
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::NullableElements);
     nested_data_type->deserializeBinaryBulkStatePrefix(settings, state);

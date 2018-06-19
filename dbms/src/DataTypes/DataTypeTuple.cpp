@@ -331,6 +331,24 @@ static DeserializeBinaryBulkStateTuple * checkAndGetTupleDeserializeState(IDataT
     return tuple_state;
 }
 
+void DataTypeTuple::serializeBinaryBulkStatePrefix(
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    auto tuple_state = std::make_shared<SerializeBinaryBulkStateTuple>();
+    tuple_state->states.resize(elems.size());
+
+    settings.path.push_back(Substream::TupleElement);
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        settings.path.back().tuple_element_name = names[i];
+        elems[i]->serializeBinaryBulkStatePrefix(settings, tuple_state->states[i]);
+    }
+    settings.path.pop_back();
+
+    state = std::move(tuple_state);
+}
+
 void DataTypeTuple::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
@@ -341,7 +359,7 @@ void DataTypeTuple::serializeBinaryBulkStateSuffix(
     for (size_t i = 0; i < elems.size(); ++i)
     {
         settings.path.back().tuple_element_name = names[i];
-        elems[i]->serializeBinaryBulkStatePrefix(settings, state->states[i]);
+        elems[i]->serializeBinaryBulkStateSuffix(settings, tuple_state->states[i]);
     }
     settings.path.pop_back();
 }
@@ -371,13 +389,6 @@ void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    if (!state)
-    {
-        auto tuple_state = std::make_shared<SerializeBinaryBulkStateTuple>();
-        tuple_state->states.resize(elems.size());
-        state = std::move(tuple_state);
-    }
-
     auto * tuple_state = checkAndGetTupleSerializeState(state);
 
     settings.path.push_back(Substream::TupleElement);

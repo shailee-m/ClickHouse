@@ -130,8 +130,13 @@ public:
 
         bool position_independent_encoding = true;
         /// If not zero, may be used to avoid reallocations while reading column of String type.
-        double avg_value_size_hint;
+        double avg_value_size_hint = 0;
     };
+
+    /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
+    virtual void serializeBinaryBulkStatePrefix(
+            SerializeBinaryBulkSettings & /*settings*/,
+            SerializeBinaryBulkStatePtr & /*state*/) const {}
 
     /// Call after serializeBinaryBulkWithMultipleStreams chain to finish serialization.
     virtual void serializeBinaryBulkStateSuffix(

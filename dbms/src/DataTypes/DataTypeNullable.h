@@ -19,6 +19,10 @@ public:
 
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
+    void serializeBinaryBulkStatePrefix(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
     void serializeBinaryBulkStateSuffix(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
