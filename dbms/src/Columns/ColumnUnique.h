@@ -65,12 +65,12 @@ public:
     size_t uniqueInsert(const Field & x) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
     ColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-    IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start,
-                                                      size_t length, size_t max_dictionary_size) override;
+    IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
+                                                                     size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
     size_t uniqueInsertDataWithTerminatingZero(const char * pos, size_t length) override;
     size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
-    SerializableState getSerializableState() const override;
+    IColumnUnique::SerializableState getSerializableState() const override;
 
     size_t getDefaultValueIndex() const override { return is_nullable ? 1 : 0; }
     size_t getNullValueIndex() const override;
@@ -153,7 +153,7 @@ private:
         const IColumn & src,
         size_t start,
         size_t length,
-        ColumnVector<IndexType>::Container & positions,
+        typename ColumnVector<IndexType>::Container & positions,
         ColumnType * overflowed_keys,
         size_t max_dictionary_size);
 };
@@ -344,7 +344,7 @@ void ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeImpl(
     const IColumn & src,
     size_t start,
     size_t length,
-    ColumnVector<IndexType>::Container & positions,
+    typename ColumnVector<IndexType>::Container & positions,
     ColumnType * overflowed_keys,
     size_t max_dictionary_size)
 {

@@ -233,7 +233,7 @@ public:
 
     IColumnUnique * getUnique() { return static_cast<IColumnUnique *>(column_unique->assumeMutable().get()); }
     const IColumnUnique * getUnique() const { return static_cast<const IColumnUnique *>(column_unique->assumeMutable().get()); }
-    const IColumnUnique::Ptr & getUniquePtr() const { return static_cast<IColumnUnique::Ptr>(column_unique); }
+    IColumnUnique::Ptr getUniquePtr() const { return static_cast<IColumnUnique::Ptr>(column_unique); }
 
     IColumn * getIndexes() { return indexes->assumeMutable().get(); }
     const IColumn * getIndexes() const { return indexes.get(); }
