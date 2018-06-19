@@ -102,10 +102,10 @@ struct IndexesSerializationType
 
     enum Type
     {
-        UInt8 = 0,
-        UInt16,
-        UInt32,
-        UInt64,
+        TUInt8 = 0,
+        TUInt16,
+        TUInt32,
+        TUInt64,
     };
 
     Type type;
@@ -119,7 +119,7 @@ struct IndexesSerializationType
     static void checkType(SerializationType type)
     {
         UInt64 value = resetFlags(type);
-        if (UInt8 <= value && value <= UInt64)
+        if (TUInt8 <= value && value <= TUInt64)
             return;
 
         throw Exception("Invalid type for DataTypeWithDictionary index column.", ErrorCodes::LOGICAL_ERROR);
@@ -146,28 +146,28 @@ struct IndexesSerializationType
         : has_additional_keys(has_additional_keys)
     {
         if (typeid_cast<const DataTypeUInt8 *>(&data_type))
-            type = IndexesSerializationType::UInt8;
+            type = TUInt8;
         else if (typeid_cast<const DataTypeUInt16 *>(&data_type))
-            type = IndexesSerializationType::UInt16;
+            type = TUInt16;
         else if (typeid_cast<const DataTypeUInt32 *>(&data_type))
-            type = IndexesSerializationType::UInt32;
+            type = TUInt32;
         else if (typeid_cast<const DataTypeUInt64 *>(&data_type))
-            type = IndexesSerializationType::UInt64;
+            type = TUInt64;
         else
             throw Exception("Invalid DataType for IndexesSerializationType. Expected UInt*, got " + data_type.getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    IDataType getDataType() const
+    DataTypePtr getDataType() const
     {
-        if (type == UInt8)
-            return DataTypeUInt8();
-        if (type == UInt16)
-            return DataTypeUInt16();
-        if (type == UInt32)
-            return DataTypeUInt32();
-        if (type == UInt64)
-            return DataTypeUInt64();
+        if (type == TUInt8)
+            return std::make_shared<DataTypeUInt8>();
+        if (type == TUInt16)
+            return std::make_shared<DataTypeUInt16>();
+        if (type == TUInt32)
+            return std::make_shared<DataTypeUInt32>();
+        if (type == TUInt64)
+            return std::make_shared<DataTypeUInt64>();
 
         throw Exception("Can't create DataType from IndexesSerializationType.", ErrorCodes::LOGICAL_ERROR);
     }

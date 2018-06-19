@@ -437,7 +437,7 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType, IndexType>::uniqueIn
 
     uniqueInsertRangeImpl(src, start, length, positions, overflowed_keys.get(), max_dictionary_size);
 
-    IndexesWithOverflow indexes_with_overflow;
+    IColumnUnique::IndexesWithOverflow indexes_with_overflow;
     indexes_with_overflow.indexes = std::move(positions_column);
     indexes_with_overflow.overflowed_keys = std::move(overflowed_keys);
     return indexes_with_overflow;
@@ -446,7 +446,7 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType, IndexType>::uniqueIn
 template <typename ColumnType, typename IndexType>
 IColumnUnique::SerializableState ColumnUnique<ColumnType, IndexType>::getSerializableState() const
 {
-    SerializableState state;
+    IColumnUnique::SerializableState state;
     state.column = column_holder;
     state.offset = numSpecialValues();
     state.limit = column_holder->size() - state.offset;
