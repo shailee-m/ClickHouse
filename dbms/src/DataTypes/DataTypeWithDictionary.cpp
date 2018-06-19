@@ -496,10 +496,9 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         auto global_dict_keys = keys_type->createColumn();
         keys_type->deserializeBinaryBulk(*global_dict_keys, *keys_stream, num_keys, 0);
 
-        auto dict_column = createColumn();
-        auto & dict_column_with_dictionary = static_cast<ColumnWithDictionary &>(*dict_column);
-        dict_column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*global_dict_keys, 0, num_keys);
-        state_with_dictionary->global_dictionary = column_with_dictionary.getUniquePtr();
+        auto column_unique = createColumnUnique(*dictionary_type, *keys_type);
+        column_unique->uniqueInsertRangeFrom(*global_dict_keys, 0, num_keys);
+        state_with_dictionary->global_dictionary = std::move(column_unique);
     };
 
     auto readAdditionalKeys = [this, state_with_dictionary, indexes_stream]()
@@ -610,64 +609,69 @@ void DataTypeWithDictionary::deserializeImpl(
 }
 
 template <typename ColumnType, typename IndexType>
-MutableColumnPtr DataTypeWithDictionary::createColumnImpl() const
+IColumnUnique::MutablePtr DataTypeWithDictionary::createColumnUniqueImpl(const IDataType & keys_type)
 {
-    return ColumnWithDictionary::create(ColumnUnique<ColumnType, IndexType>::create(dictionary_type),
-                                        indexes_type->createColumn());
+    return ColumnUnique<ColumnType, IndexType>::create(keys_type);
 }
 
 template <typename ColumnType>
-MutableColumnPtr DataTypeWithDictionary::createColumnImpl() const
+IColumnUnique::MutablePtr DataTypeWithDictionary::createColumnUniqueImpl(const IDataType & keys_type,
+                                                                         const IDataType & indexes_type)
 {
-    if (typeid_cast<const DataTypeUInt8 *>(indexes_type.get()))
-        return createColumnImpl<ColumnType, UInt8>();
-    if (typeid_cast<const DataTypeUInt16 *>(indexes_type.get()))
-        return createColumnImpl<ColumnType, UInt16>();
-    if (typeid_cast<const DataTypeUInt32 *>(indexes_type.get()))
-        return createColumnImpl<ColumnType, UInt32>();
-    if (typeid_cast<const DataTypeUInt64 *>(indexes_type.get()))
-        return createColumnImpl<ColumnType, UInt64>();
+    if (typeid_cast<const DataTypeUInt8 *>(&indexes_type))
+        return createColumnUniqueImpl<ColumnType, UInt8>(keys_type);
+    if (typeid_cast<const DataTypeUInt16 *>(&indexes_type))
+        return createColumnUniqueImpl<ColumnType, UInt16>(keys_type);
+    if (typeid_cast<const DataTypeUInt32 *>(&indexes_type))
+        return createColumnUniqueImpl<ColumnType, UInt32>(keys_type);
+    if (typeid_cast<const DataTypeUInt64 *>(&indexes_type))
+        return createColumnUniqueImpl<ColumnType, UInt64>(keys_type);
 
-    throw Exception("The type of indexes must be unsigned integer, but got " + dictionary_type->getName(),
+    throw Exception("The type of indexes must be unsigned integer, but got " + indexes_type.getName(),
                     ErrorCodes::LOGICAL_ERROR);
 }
 
 struct CreateColumnVector
 {
-    MutableColumnPtr & column;
-    const DataTypeWithDictionary * data_type_with_dictionary;
-    const IDataType * type;
+    IColumnUnique::MutablePtr & column;
+    const IDataType & keys_type;
+    const IDataType & indexes_type;
+    const IDataType * nested_type;
 
-    CreateColumnVector(MutableColumnPtr & column, const DataTypeWithDictionary * data_type_with_dictionary,
-                       const IDataType * type)
-            : column(column), data_type_with_dictionary(data_type_with_dictionary), type(type) {}
+    CreateColumnVector(IColumnUnique::MutablePtr & column, const IDataType & keys_type, const IDataType & indexes_type)
+            : column(column), keys_type(keys_type), indexes_type(indexes_type), nested_type(&keys_type)
+    {
+        if (auto nullable_type = typeid_cast<const DataTypeNullable *>(&keys_type))
+            nested_type = nullable_type->getNestedType().get();
+    }
 
     template <typename T, size_t>
     void operator()()
     {
-        if (typeid_cast<const DataTypeNumber<T> *>(type))
-            column = data_type_with_dictionary->createColumnImpl<ColumnVector<T>>();
+        if (typeid_cast<const DataTypeNumber<T> *>(nested_type))
+            column = DataTypeWithDictionary::createColumnUniqueImpl<ColumnVector<T>>(keys_type, indexes_type);
     }
 };
 
-MutableColumnPtr DataTypeWithDictionary::createColumn() const
+IColumnUnique::MutablePtr DataTypeWithDictionary::createColumnUnique(const IDataType & keys_type,
+                                                                     const IDataType & indexes_type)
 {
-    auto type = dictionary_type;
+    auto * type = &keys_type;
     if (type->isNullable())
-        type = static_cast<const DataTypeNullable &>(*dictionary_type).getNestedType();
+        type = static_cast<const DataTypeNullable &>(keys_type).getNestedType().get();
 
     if (type->isString())
         return createColumnImpl<ColumnString>();
     if (type->isFixedString())
         return createColumnImpl<ColumnFixedString>();
-    if (typeid_cast<const DataTypeDate *>(type.get()))
+    if (typeid_cast<const DataTypeDate *>(type))
         return createColumnImpl<ColumnVector<UInt16>>();
-    if (typeid_cast<const DataTypeDateTime *>(type.get()))
+    if (typeid_cast<const DataTypeDateTime *>(type))
         return createColumnImpl<ColumnVector<UInt32>>();
     if (type->isNumber())
     {
-        MutableColumnPtr column;
-        TypeListNumbers::forEach(CreateColumnVector(column, this, type.get()));
+        IColumnUnique::MutablePtr column;
+        TypeListNumbers::forEach(CreateColumnVector(column, keys_type, indexes_type));
 
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -677,6 +681,13 @@ MutableColumnPtr DataTypeWithDictionary::createColumn() const
 
     throw Exception("Unexpected dictionary type for DataTypeWithDictionary: " + type->getName(),
                     ErrorCodes::LOGICAL_ERROR);
+}
+
+MutableColumnPtr DataTypeWithDictionary::createColumn() const
+{
+    MutableColumnPtr indexes = indexes_type->createColumn();
+    MutableColumnPtr dictionary = createColumnUnique(*dictionary_type, *indexes_type);
+    return ColumnWithDictionary::create(std::move(dictionary), std::move(indexes));
 }
 
 bool DataTypeWithDictionary::equals(const IDataType & rhs) const
