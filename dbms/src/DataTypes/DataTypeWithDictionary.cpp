@@ -502,7 +502,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         state_with_dictionary->global_dictionary = column_with_dictionary.getUniquePtr();
     };
 
-    auto readAdditionalKeys = [state_with_dictionary, indexes_stream]()
+    auto readAdditionalKeys = [this, state_with_dictionary, indexes_stream]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *indexes_stream);
@@ -511,7 +511,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         keys_type->deserializeBinaryBulk(*state_with_dictionary->additional_keys, *indexes_stream, num_keys, 0);
     };
 
-    auto readIndexes = [state_with_dictionary, indexes_stream, &column_with_dictionary](UInt64 num_rows)
+    auto readIndexes = [this, state_with_dictionary, indexes_stream, &column_with_dictionary](UInt64 num_rows)
     {
         MutableColumnPtr indexes_column = indexes_type->createColumn();
         indexes_type->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
@@ -535,7 +535,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
             const auto & additional_keys = state_with_dictionary->additional_keys;
 
             size_t max_dictionary_size = global_dictionary->size();
-            auto index_map = mapIndexWithOverflow(*indexes_column, max_dictionary_size);
+            ColumnPtr index_map = mapIndexWithOverflow(*indexes_column, max_dictionary_size);
             auto used_keys = state_with_dictionary->global_dictionary->getNestedColumn()->index(*index_map, 0);
             auto indexes = column_unique->uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
 
