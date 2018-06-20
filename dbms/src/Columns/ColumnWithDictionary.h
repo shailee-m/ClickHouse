@@ -152,7 +152,7 @@ public:
 
     ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
-        return ColumnWithDictionary::create(column_unique, indexes->index(*indexes_, limit));
+        return ColumnWithDictionary::create(column_unique, indexes->index(indexes_, limit));
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override

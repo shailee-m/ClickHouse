@@ -89,7 +89,7 @@ public:
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
-        if (indexes->size() < limit)
+        if (indexes.size() < limit)
             throw Exception("Size of indexes is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
         return cloneDummy(limit ? limit : s);
