@@ -267,7 +267,7 @@ void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
     {
         auto unique_state = state_with_dictionary->global_dictionary->getSerializableState();
         UInt64 num_keys = unique_state.limit;
-        if (num_keys > 0)
+        if (settings.max_dictionary_size)
         {
             settings.path.push_back(Substream::DictionaryKeys);
             auto * stream = settings.getter(settings.path);

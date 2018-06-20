@@ -297,6 +297,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 {
     /// Finish columns serialization.
     IDataType::SerializeBinaryBulkSettings settings;
+    settings.max_dictionary_size = 1024;
     OffsetColumns offset_columns;
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
@@ -556,6 +557,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
 {
     /// Finish columns serialization.
     IDataType::SerializeBinaryBulkSettings settings;
+    settings.max_dictionary_size = 1024;
     OffsetColumns offset_columns;
     for (size_t i = 0; i < header.columns(); ++i)
     {
