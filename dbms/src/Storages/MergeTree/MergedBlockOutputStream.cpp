@@ -121,9 +121,6 @@ void IMergedBlockOutputStream::writeData(
                 if (is_offsets && skip_offsets)
                     return;
 
-                if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::DictionaryKeys)
-                    return;
-
                 String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
                 /// Don't write offsets more than one time for Nested type.
@@ -154,9 +151,6 @@ void IMergedBlockOutputStream::writeData(
 
             /// Don't write offsets more than one time for Nested type.
             if (is_offsets && offset_columns.count(stream_name))
-                return;
-
-            if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::DictionaryKeys)
                 return;
 
             column_streams[stream_name]->compressed.nextIfAtEnd();
