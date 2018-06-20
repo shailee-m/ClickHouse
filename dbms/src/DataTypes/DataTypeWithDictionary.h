@@ -146,7 +146,7 @@ public:
     bool onlyNull() const override { return false; }
     bool withDictionary() const override { return true; }
 
-    static IColumnUnique::MutablePtr createColumnUnique(const IDataType & keys_type, const IDataType & indexes_type);
+    static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, const IDataType & indexes_type);
 
 private:
 
@@ -165,10 +165,10 @@ private:
                          DeserealizeFunctionPtr<Args ...> func, Args ... args) const;
 
     template <typename ColumnType, typename IndexType>
-    static IColumnUnique::MutablePtr createColumnUniqueImpl(const IDataType & keys_type);
+    static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type);
 
     template <typename ColumnType>
-    static IColumnUnique::MutablePtr createColumnUniqueImpl(const IDataType & keys_type, const IDataType & indexes_type);
+    static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const IDataType & indexes_type);
 
 
     friend struct CreateColumnVector;

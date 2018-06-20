@@ -7,9 +7,8 @@ namespace DB
 class IColumnUnique : public IColumn
 {
 public:
-
-    using Ptr = IColumn::template immutable_ptr<IColumnUnique>;
-    using MutablePtr = IColumn::template mutable_ptr<IColumnUnique>;
+    using ColumnUniquePtr = IColumn::template immutable_ptr<IColumnUnique>;
+    using MutableColumnUniquePtr = IColumn::template mutable_ptr<IColumnUnique>;
 
     /// Column always contains Null if it's Nullable and empty string if it's String or Nullable(String).
     /// So, size may be greater than the number of inserted unique values.
@@ -136,5 +135,8 @@ public:
         throw Exception("Method scatter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
+
+using ColumnUniquePtr = IColumnUnique::ColumnUniquePtr;
+using MutableColumnUniquePtr = IColumnUnique::MutableColumnUniquePtr;
 
 }

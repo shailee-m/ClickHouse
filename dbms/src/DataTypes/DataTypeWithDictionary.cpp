@@ -178,11 +178,11 @@ struct IndexesSerializationType
 struct SerializeStateWithDictionary : public IDataType::SerializeBinaryBulkState
 {
     KeysSerializationVersion key_version;
-    IColumnUnique::MutablePtr global_dictionary;
+    MutableColumnUniquePtr global_dictionary;
 
     explicit SerializeStateWithDictionary(
         UInt64 key_version,
-        IColumnUnique::MutablePtr && column_unique)
+        MutableColumnUniquePtr && column_unique)
         : key_version(key_version)
         , global_dictionary(std::move(column_unique)) {}
 };
@@ -190,7 +190,7 @@ struct SerializeStateWithDictionary : public IDataType::SerializeBinaryBulkState
 struct DeserializeStateWithDictionary : public IDataType::DeserializeBinaryBulkState
 {
     KeysSerializationVersion key_version;
-    IColumnUnique::Ptr global_dictionary;
+    ColumnUniquePtr global_dictionary;
     UInt64 num_bytes_in_dictionary;
 
     MutableColumnPtr additional_keys;
@@ -611,14 +611,14 @@ void DataTypeWithDictionary::deserializeImpl(
 }
 
 template <typename ColumnType, typename IndexType>
-IColumnUnique::MutablePtr DataTypeWithDictionary::createColumnUniqueImpl(const IDataType & keys_type)
+MutableColumnUniquePtr DataTypeWithDictionary::createColumnUniqueImpl(const IDataType & keys_type)
 {
     return ColumnUnique<ColumnType, IndexType>::create(keys_type);
 }
 
 template <typename ColumnType>
-IColumnUnique::MutablePtr DataTypeWithDictionary::createColumnUniqueImpl(const IDataType & keys_type,
-                                                                         const IDataType & indexes_type)
+MutableColumnUniquePtr DataTypeWithDictionary::createColumnUniqueImpl(const IDataType & keys_type,
+                                                                      const IDataType & indexes_type)
 {
     if (typeid_cast<const DataTypeUInt8 *>(&indexes_type))
         return createColumnUniqueImpl<ColumnType, UInt8>(keys_type);
@@ -635,12 +635,12 @@ IColumnUnique::MutablePtr DataTypeWithDictionary::createColumnUniqueImpl(const I
 
 struct CreateColumnVector
 {
-    IColumnUnique::MutablePtr & column;
+    MutableColumnUniquePtr & column;
     const IDataType & keys_type;
     const IDataType & indexes_type;
     const IDataType * nested_type;
 
-    CreateColumnVector(IColumnUnique::MutablePtr & column, const IDataType & keys_type, const IDataType & indexes_type)
+    CreateColumnVector(MutableColumnUniquePtr & column, const IDataType & keys_type, const IDataType & indexes_type)
             : column(column), keys_type(keys_type), indexes_type(indexes_type), nested_type(&keys_type)
     {
         if (auto nullable_type = typeid_cast<const DataTypeNullable *>(&keys_type))
@@ -655,8 +655,8 @@ struct CreateColumnVector
     }
 };
 
-IColumnUnique::MutablePtr DataTypeWithDictionary::createColumnUnique(const IDataType & keys_type,
-                                                                     const IDataType & indexes_type)
+MutableColumnUniquePtr DataTypeWithDictionary::createColumnUnique(const IDataType & keys_type,
+                                                                  const IDataType & indexes_type)
 {
     auto * type = &keys_type;
     if (type->isNullable())
@@ -672,7 +672,7 @@ IColumnUnique::MutablePtr DataTypeWithDictionary::createColumnUnique(const IData
         return createColumnUniqueImpl<ColumnVector<UInt32>>(keys_type, indexes_type);
     if (type->isNumber())
     {
-        IColumnUnique::MutablePtr column;
+        MutableColumnUniquePtr column;
         TypeListNumbers::forEach(CreateColumnVector(column, keys_type, indexes_type));
 
         if (!column)
