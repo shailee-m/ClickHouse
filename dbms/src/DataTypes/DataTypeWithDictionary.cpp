@@ -440,7 +440,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         /// Insert used_keys into global dictionary and update sub_index.
         auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*used_keys, 0, used_keys->size(),
                                                                                       settings.max_dictionary_size);
-        sub_index = std::move(indexes_with_overflow.indexes);
+        sub_index = (*indexes_with_overflow.indexes->index(*sub_index, 0)).mutate();
         used_keys = std::move(indexes_with_overflow.overflowed_keys);
     }
 
@@ -530,10 +530,11 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 
         auto & global_dictionary = state_with_dictionary->global_dictionary;
         const auto & additional_keys = state_with_dictionary->additional_keys;
+        auto * column_unique = column_with_dictionary.getUnique();
 
         bool has_additional_keys = state_with_dictionary->additional_keys != nullptr;
         bool column_is_empty = column_with_dictionary.empty();
-        bool column_with_global_dictionary = column_with_dictionary.getUnique() == global_dictionary.get();
+        bool column_with_global_dictionary = column_unique == global_dictionary.get();
 
         if (!has_additional_keys && (column_is_empty || column_with_global_dictionary))
         {
@@ -544,17 +545,13 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         }
         else if (!need_dictionary)
         {
-            UInt64 num_keys = additional_keys->size();
-            ColumnPtr indexes = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*additional_keys, 0, num_keys);
+            auto indexes = column_unique->uniqueInsertRangeFrom(*additional_keys, 0, additional_keys->size());
             column_with_dictionary.getIndexes()->insertRangeFrom(*indexes->index(*indexes_column, 0), 0, num_rows);
         }
         else
         {
-            auto * column_unique = column_with_dictionary.getUnique();
-
-            size_t max_dictionary_size = global_dictionary->size();
-            auto index_map = mapIndexWithOverflow(*indexes_column, max_dictionary_size);
-            auto used_keys = state_with_dictionary->global_dictionary->getNestedColumn()->index(*index_map, 0);
+            auto index_map = mapIndexWithOverflow(*indexes_column, global_dictionary->size());
+            auto used_keys = global_dictionary->getNestedColumn()->index(*index_map, 0);
             auto indexes = column_unique->uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
 
             if (additional_keys)
