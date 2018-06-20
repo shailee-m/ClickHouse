@@ -249,6 +249,8 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
         while (true)
         {
+            IDataType::DeserializeBinaryBulkSettings settings;
+
             /// Check that mark points to current position in file.
             bool marks_eof = false;
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
@@ -270,7 +272,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                             + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
                         throw;
                     }
-                }, {});
+                }, settings.path);
 
             ++mark_num;
 
@@ -278,7 +280,6 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             /// NOTE Shared array sizes of Nested columns are read more than once. That's Ok.
 
             MutableColumnPtr tmp_column = name_type.type->createColumn();
-            IDataType::DeserializeBinaryBulkSettings settings;
             settings.getter = [&](const IDataType::SubstreamPath & substream_path)
             {
                 String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
