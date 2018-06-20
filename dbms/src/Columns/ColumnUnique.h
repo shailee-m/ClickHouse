@@ -55,7 +55,7 @@ class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<Colum
 
 private:
     explicit ColumnUnique(MutableColumnPtr && holder);
-    explicit ColumnUnique(const DataTypePtr & type);
+    explicit ColumnUnique(const IDataType & type);
     ColumnUnique(const ColumnUnique & other)
             : column_holder(other.column_holder), nullable_column(other.nullable_column)
             , nullable_column_map(other.nullable_column_map), is_nullable(other.is_nullable) {}
@@ -159,18 +159,18 @@ private:
 };
 
 template <typename ColumnType, typename IndexType>
-ColumnUnique<ColumnType, IndexType>::ColumnUnique(const DataTypePtr & type) : is_nullable(type->isNullable())
+ColumnUnique<ColumnType, IndexType>::ColumnUnique(const IDataType & type) : is_nullable(type.isNullable())
 {
     if (is_nullable)
     {
-        nullable_column = type->createColumn()->cloneResized(numSpecialValues());
+        nullable_column = type.createColumn()->cloneResized(numSpecialValues());
         auto & column_nullable = static_cast<ColumnNullable &>(nullable_column->assumeMutableRef());
         column_holder = column_nullable.getNestedColumnPtr();
         nullable_column_map = &column_nullable.getNullMapData();
         (*nullable_column_map)[getDefaultValueIndex()] = 0;
     }
     else
-        column_holder = type->createColumn()->cloneResized(numSpecialValues());
+        column_holder = type.createColumn()->cloneResized(numSpecialValues());
 }
 
 template <typename ColumnType, typename IndexType>

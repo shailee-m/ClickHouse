@@ -530,11 +530,12 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
       * If this is a data type with multiple stream, get the first stream, that we assume have real row count.
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
+    IDataType::SubstreamPath path;
     column_type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column_name, substream_path);
-    },  {});
+    }, path);
 
     Files_t::const_iterator it = files.find(filename);
     if (files.end() == it)
