@@ -1,5 +1,6 @@
 #pragma once
 #include <DataTypes/IDataType.h>
+#include <Columns/IColumnUnique.h>
 
 namespace DB
 {

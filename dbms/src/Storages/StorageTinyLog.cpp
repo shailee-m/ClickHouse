@@ -357,7 +357,8 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
         }
     };
 
-    type.enumerateStreams(stream_callback, {});
+    IDataType::SubstreamPath path;
+    type.enumerateStreams(stream_callback, path);
 }
 
 

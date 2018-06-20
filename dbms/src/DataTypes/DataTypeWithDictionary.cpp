@@ -544,7 +544,9 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
                 auto additional_indexes = column_unique->uniqueInsertRangeFrom(*additional_keys, 0, num_keys);
                 indexes->insertRangeFrom(*additional_indexes, 0, num_keys);
             }
-            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes_column->index(indexes, 0), 0, num_rows);
+
+            ColumnPtr res_indexes = std::move(indexes);
+            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes_column->index(res_indexes, 0), 0, num_rows);
         }
     };
 
