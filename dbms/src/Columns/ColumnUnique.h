@@ -432,7 +432,7 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType, IndexType>::uniqueIn
 {
 
     auto positions_column = ColumnVector<IndexType>::create(length);
-    auto overflowed_keys = column_holder->cloneEmpty();
+    auto overflowed_keys = ColumnType().cloneEmpty();
     auto & positions = positions_column->getData();
 
     uniqueInsertRangeImpl(src, start, length, positions, overflowed_keys.get(), max_dictionary_size);

@@ -246,8 +246,7 @@ void DataTypeWithDictionary::serializeBinaryBulkStatePrefix(
 
     writeIntBinary(key_version, *stream);
 
-    auto column_with_dictionary = createColumn();
-    auto column_unique = static_cast<ColumnWithDictionary &>(*column_with_dictionary).assumeMutable();
+    auto column_unique = createColumnUnique(*dictionary_type, *indexes_type);
     state = std::make_shared<SerializeStateWithDictionary>(key_version, std::move(column_unique));
 }
 
