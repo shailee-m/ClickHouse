@@ -98,7 +98,8 @@ struct  KeysSerializationVersion
 struct IndexesSerializationType
 {
     using SerializationType = UInt64;
-    static constexpr UInt64 HasAdditionalKeysBit = 1u << 8u;
+    static constexpr UInt64 NeedGlobalDictionaryBit = 1u << 8u;
+    static constexpr UInt64 HasAdditionalKeysBit = 1u << 9u;
 
     enum Type
     {
@@ -110,10 +111,11 @@ struct IndexesSerializationType
 
     Type type;
     bool has_additional_keys;
+    bool need_global_dictionary;
 
     static constexpr SerializationType resetFlags(SerializationType type)
     {
-        return type & (~(HasAdditionalKeysBit));
+        return type & (~(HasAdditionalKeysBit | NeedGlobalDictionaryBit));
     }
 
     static void checkType(SerializationType type)
@@ -130,6 +132,8 @@ struct IndexesSerializationType
         SerializationType val = type;
         if (has_additional_keys)
             val |= HasAdditionalKeysBit;
+        if (need_global_dictionary)
+            val |= NeedGlobalDictionaryBit;
         writeIntBinary(val, buffer);
     }
 
@@ -139,11 +143,12 @@ struct IndexesSerializationType
         readIntBinary(val, buffer);
         checkType(val);
         has_additional_keys = (val & HasAdditionalKeysBit) != 0;
+        need_global_dictionary = (val & NeedGlobalDictionaryBit) != 0;
         type = static_cast<Type>(resetFlags(val));
     }
 
-    IndexesSerializationType(const IDataType & data_type, bool has_additional_keys)
-        : has_additional_keys(has_additional_keys)
+    IndexesSerializationType(const IDataType & data_type, bool has_additional_keys, bool need_global_dictionary)
+        : has_additional_keys(has_additional_keys), need_global_dictionary(need_global_dictionary)
     {
         if (typeid_cast<const DataTypeUInt8 *>(&data_type))
             type = TUInt8;
@@ -439,9 +444,10 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     }
 
     bool need_additional_keys = !used_keys->empty();
+    bool need_dictionary = settings.max_dictionary_size != 0;
     bool need_write_dictionary = !was_global_dictionary_written && unique_state.limit >= settings.max_dictionary_size;
 
-    IndexesSerializationType index_version(*indexes_type, need_additional_keys);
+    IndexesSerializationType index_version(*indexes_type, need_additional_keys, need_dictionary);
     index_version.serialize(*indexes_stream);
 
     unique_state = global_dictionary->getSerializableState();
@@ -562,11 +568,11 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
             if (indexes_stream->eof())
                 break;
 
-            if (!state_with_dictionary->global_dictionary)
-                readDictionary();
-
             IndexesSerializationType index_version;
             index_version.deserialize(*indexes_stream);
+
+            if (index_version.need_global_dictionary && !state_with_dictionary->global_dictionary)
+                readDictionary();
 
             if (index_version.has_additional_keys)
                 readAdditionalKeys();
