@@ -198,6 +198,7 @@ struct DeserializeStateWithDictionary : public IDataType::DeserializeBinaryBulkS
     ColumnUniquePtr global_dictionary;
     UInt64 num_bytes_in_dictionary;
 
+    IndexesSerializationType index_type;
     MutableColumnPtr additional_keys;
     UInt64 num_pending_rows = 0;
 
@@ -521,12 +522,14 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         keys_type->deserializeBinaryBulk(*state_with_dictionary->additional_keys, *indexes_stream, num_keys, 0);
     };
 
-    auto readIndexes = [this, state_with_dictionary, indexes_stream, &column_with_dictionary](UInt64 num_rows)
+    auto readIndexes = [this, state_with_dictionary, indexes_stream, &column_with_dictionary](UInt64 num_rows,
+                                                                                              bool need_dictionary)
     {
         MutableColumnPtr indexes_column = indexes_type->createColumn();
         indexes_type->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
 
         auto & global_dictionary = state_with_dictionary->global_dictionary;
+        const auto & additional_keys = state_with_dictionary->additional_keys;
 
         bool has_additional_keys = state_with_dictionary->additional_keys != nullptr;
         bool column_is_empty = column_with_dictionary.empty();
@@ -539,10 +542,15 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 
             column_with_dictionary.getIndexes()->insertRangeFrom(*indexes_column, 0, num_rows);
         }
+        else if (need_dictionary)
+        {
+            UInt64 num_keys = additional_keys->size();
+            ColumnPtr indexes = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*additional_keys, 0, num_keys);
+            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes_column->index(*indexes, 0), 0, num_rows);
+        }
         else
         {
             auto * column_unique = column_with_dictionary.getUnique();
-            const auto & additional_keys = state_with_dictionary->additional_keys;
 
             size_t max_dictionary_size = global_dictionary->size();
             ColumnPtr index_map = mapIndexWithOverflow(*indexes_column, max_dictionary_size);
@@ -568,13 +576,12 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
             if (indexes_stream->eof())
                 break;
 
-            IndexesSerializationType index_version;
-            index_version.deserialize(*indexes_stream);
+            state_with_dictionary->index_type.deserialize(*indexes_stream);
 
-            if (index_version.need_global_dictionary && !state_with_dictionary->global_dictionary)
+            if (state_with_dictionary->index_type.need_global_dictionary && !state_with_dictionary->global_dictionary)
                 readDictionary();
 
-            if (index_version.has_additional_keys)
+            if (state_with_dictionary->index_type.has_additional_keys)
                 readAdditionalKeys();
             else
                 state_with_dictionary->additional_keys = nullptr;
@@ -583,7 +590,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         }
 
         size_t num_rows_to_read = std::min(limit, state_with_dictionary->num_pending_rows);
-        readIndexes(num_rows_to_read);
+        readIndexes(num_rows_to_read, state_with_dictionary->index_type.need_global_dictionary);
         limit -= num_rows_to_read;
         state_with_dictionary->num_pending_rows -= num_rows_to_read;
     }
