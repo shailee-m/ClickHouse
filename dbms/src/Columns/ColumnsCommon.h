@@ -41,17 +41,17 @@ void filterArraysImplOnlyData(
 namespace detail
 {
     template <typename T>
-    const PaddedPODArray<T> * getIndexesData(const ColumnPtr & indexes);
+    const PaddedPODArray<T> * getIndexesData(const IColumn & indexes);
 }
 
 /// Check limit <= indexes->size() and call column.indexImpl(const PaddedPodArray<Type> & indexes, size_t limit).
 template <typename Column>
-ColumnPtr selectIndexImpl(const Column & column, const ColumnPtr & indexes, size_t limit)
+ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t limit)
 {
     if (limit == 0)
-        limit = indexes->size();
+        limit = indexes.size();
 
-    if (indexes->size() < limit)
+    if (indexes.size() < limit)
         throw Exception("Size of indexes is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))

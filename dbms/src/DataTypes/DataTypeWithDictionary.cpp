@@ -431,9 +431,9 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
 
     /// Create pair (used_keys, sub_index) which is the dictionary for [offset, offset + limit) range.
     MutableColumnPtr sub_index = (*indexes->cut(offset, limit)).mutate();
-    ColumnPtr unique_indexes = mapUniqueIndex(*sub_index);
-    /// unique_indexes->index(sub_index) == indexes[offset:offset + limit]
-    MutableColumnPtr used_keys = (*keys->index(unique_indexes, 0)).mutate();
+    auto unique_indexes = mapUniqueIndex(*sub_index);
+    /// unique_indexes->index(*sub_index) == indexes[offset:offset + limit]
+    MutableColumnPtr used_keys = (*keys->index(*unique_indexes, 0)).mutate();
 
     if (settings.max_dictionary_size)
     {
@@ -525,12 +525,8 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
     auto readIndexes = [this, state_with_dictionary, indexes_stream, &column_with_dictionary](UInt64 num_rows,
                                                                                               bool need_dictionary)
     {
-        ColumnPtr indexes_column;
-        {
-            MutableColumnPtr mut_indexes_column = indexes_type->createColumn();
-            indexes_type->deserializeBinaryBulk(*mut_indexes_column, *indexes_stream, num_rows, 0);
-            indexes_column = std::move(mut_indexes_column);
-        }
+        MutableColumnPtr indexes_column = indexes_type->createColumn();
+        indexes_type->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
 
         auto & global_dictionary = state_with_dictionary->global_dictionary;
         const auto & additional_keys = state_with_dictionary->additional_keys;
@@ -550,15 +546,15 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         {
             UInt64 num_keys = additional_keys->size();
             ColumnPtr indexes = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*additional_keys, 0, num_keys);
-            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes->index(indexes_column, 0), 0, num_rows);
+            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes->index(*indexes_column, 0), 0, num_rows);
         }
         else
         {
             auto * column_unique = column_with_dictionary.getUnique();
 
             size_t max_dictionary_size = global_dictionary->size();
-            ColumnPtr index_map = mapIndexWithOverflow(*indexes_column, max_dictionary_size);
-            auto used_keys = state_with_dictionary->global_dictionary->getNestedColumn()->index(index_map, 0);
+            auto index_map = mapIndexWithOverflow(*indexes_column, max_dictionary_size);
+            auto used_keys = state_with_dictionary->global_dictionary->getNestedColumn()->index(*index_map, 0);
             auto indexes = column_unique->uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
 
             if (additional_keys)
@@ -568,8 +564,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
                 indexes->insertRangeFrom(*additional_indexes, 0, num_keys);
             }
 
-            ColumnPtr res_indexes = std::move(indexes);
-            column_with_dictionary.getIndexes()->insertRangeFrom(*res_indexes->index(indexes_column, 0), 0, num_rows);
+            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes->index(*indexes_column, 0), 0, num_rows);
         }
     };
 
