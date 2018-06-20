@@ -525,8 +525,12 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
     auto readIndexes = [this, state_with_dictionary, indexes_stream, &column_with_dictionary](UInt64 num_rows,
                                                                                               bool need_dictionary)
     {
-        MutableColumnPtr indexes_column = indexes_type->createColumn();
-        indexes_type->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
+        ColumnPtr indexes_column;
+        {
+            MutableColumnPtr mut_indexes_column = indexes_type->createColumn();
+            mut_indexes_column->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
+            indexes_column = std::move(mut_indexes_column);
+        }
 
         auto & global_dictionary = state_with_dictionary->global_dictionary;
         const auto & additional_keys = state_with_dictionary->additional_keys;
@@ -546,7 +550,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         {
             UInt64 num_keys = additional_keys->size();
             ColumnPtr indexes = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*additional_keys, 0, num_keys);
-            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes_column->index(indexes, 0), 0, num_rows);
+            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes->index(indexes_column, 0), 0, num_rows);
         }
         else
         {
@@ -565,7 +569,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
             }
 
             ColumnPtr res_indexes = std::move(indexes);
-            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes_column->index(res_indexes, 0), 0, num_rows);
+            column_with_dictionary.getIndexes()->insertRangeFrom(*res_indexes->index(indexes_column, 0), 0, num_rows);
         }
     };
 
