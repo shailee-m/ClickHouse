@@ -424,7 +424,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     bool was_global_dictionary_written = unique_state.limit >= settings.max_dictionary_size;
 
     const auto & indexes = column_with_dictionary.getIndexesPtr();
-    const auto & keys = unique_state.column;
+    const auto & keys = column_with_dictionary.getUnique()->getSerializableState().column;
 
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
