@@ -546,7 +546,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         {
             UInt64 num_keys = additional_keys->size();
             ColumnPtr indexes = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*additional_keys, 0, num_keys);
-            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes_column->index(*indexes, 0), 0, num_rows);
+            column_with_dictionary.getIndexes()->insertRangeFrom(*indexes_column->index(indexes, 0), 0, num_rows);
         }
         else
         {
