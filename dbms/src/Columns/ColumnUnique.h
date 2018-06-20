@@ -432,10 +432,14 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType, IndexType>::uniqueIn
 {
 
     auto positions_column = ColumnVector<IndexType>::create(length);
-    auto overflowed_keys = ColumnType().cloneEmpty();
+    auto overflowed_keys = column_holder->cloneEmpty();
     auto & positions = positions_column->getData();
 
-    uniqueInsertRangeImpl(src, start, length, positions, overflowed_keys.get(), max_dictionary_size);
+    auto overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
+    if (!overflowed_keys_ptr)
+        throw Exception("Invalid keys type for ColumnUnique.", ErrorCodes::LOGICAL_ERROR);
+
+    uniqueInsertRangeImpl(src, start, length, positions, overflowed_keys_ptr, max_dictionary_size);
 
     IColumnUnique::IndexesWithOverflow indexes_with_overflow;
     indexes_with_overflow.indexes = std::move(positions_column);
