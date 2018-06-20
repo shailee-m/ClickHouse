@@ -528,7 +528,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr indexes_column;
         {
             MutableColumnPtr mut_indexes_column = indexes_type->createColumn();
-            mut_indexes_column->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
+            indexes_type->deserializeBinaryBulk(*mut_indexes_column, *indexes_stream, num_rows, 0);
             indexes_column = std::move(mut_indexes_column);
         }
 
