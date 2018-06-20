@@ -626,7 +626,7 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
     return std::move(res);
 }
 
-ColumnPtr ColumnArray::index(const ColumnPtr & indexes, size_t limit) const
+ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
