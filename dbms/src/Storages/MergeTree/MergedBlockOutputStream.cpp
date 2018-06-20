@@ -72,7 +72,7 @@ void IMergedBlockOutputStream::addStreams(
 IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
         const String & name, OffsetColumns & offset_columns, bool skip_offsets)
 {
-    return [&name, &offset_columns, skip_offsets] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
+    return [&, skip_offsets] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
         if (is_offsets && skip_offsets)
