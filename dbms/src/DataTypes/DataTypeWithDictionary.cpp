@@ -259,16 +259,22 @@ void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
 
     if (state_with_dictionary->global_dictionary)
     {
-        settings.path.push_back(Substream::DictionaryKeys);
-        auto * stream = settings.getter(settings.path);
-        settings.path.pop_back();
-
-        if (!stream)
-            throw Exception("Got empty stream in DataTypeWithDictionary::serializeBinaryBulkStateSuffix",
-                            ErrorCodes::LOGICAL_ERROR);
-
         auto unique_state = state_with_dictionary->global_dictionary->getSerializableState();
-        removeNullable(dictionary_type)->serializeBinaryBulk(*unique_state.column, *stream, unique_state.offset, unique_state.limit);
+        UInt64 num_keys = unique_state.limit;
+        if (num_keys > 0)
+        {
+            settings.path.push_back(Substream::DictionaryKeys);
+            auto * stream = settings.getter(settings.path);
+            settings.path.pop_back();
+
+            if (!stream)
+                throw Exception("Got empty stream in DataTypeWithDictionary::serializeBinaryBulkStateSuffix",
+                                ErrorCodes::LOGICAL_ERROR);
+
+            writeIntBinary(num_keys, *stream);
+            removeNullable(dictionary_type)->serializeBinaryBulk(*unique_state.column, *stream,
+                                                                 unique_state.offset, unique_state.limit);
+        }
     }
 }
 
