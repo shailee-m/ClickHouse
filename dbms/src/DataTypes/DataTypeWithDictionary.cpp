@@ -268,7 +268,7 @@ void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
                             ErrorCodes::LOGICAL_ERROR);
 
         auto unique_state = state_with_dictionary->global_dictionary->getSerializableState();
-        dictionary_type->serializeBinaryBulk(*unique_state.column, *stream, unique_state.offset, unique_state.limit);
+        removeNullable(dictionary_type)->serializeBinaryBulk(*unique_state.column, *stream, unique_state.offset, unique_state.limit);
     }
 }
 
@@ -445,14 +445,14 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         /// Write global dictionary if it wasn't written and has too many keys.
         UInt64 num_keys = settings.max_dictionary_size;
         writeIntBinary(num_keys, *keys_stream);
-        dictionary_type->serializeBinaryBulk(*unique_state.column, *keys_stream, unique_state.offset, num_keys);
+        removeNullable(dictionary_type)->serializeBinaryBulk(*unique_state.column, *keys_stream, unique_state.offset, num_keys);
     }
 
     if (need_additional_keys)
     {
         UInt64 num_keys = used_keys->size();
         writeIntBinary(num_keys, *indexes_stream);
-        dictionary_type->serializeBinaryBulk(*used_keys, *indexes_stream, 0, num_keys);
+        removeNullable(dictionary_type)->serializeBinaryBulk(*used_keys, *indexes_stream, 0, num_keys);
     }
 
     UInt64 num_rows = sub_index->size();
@@ -495,7 +495,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         auto global_dict_keys = keys_type->createColumn();
         keys_type->deserializeBinaryBulk(*global_dict_keys, *keys_stream, num_keys, 0);
 
-        auto column_unique = createColumnUnique(*dictionary_type, *keys_type);
+        auto column_unique = createColumnUnique(*dictionary_type, *indexes_type);
         column_unique->uniqueInsertRangeFrom(*global_dict_keys, 0, num_keys);
         state_with_dictionary->global_dictionary = std::move(column_unique);
     };
