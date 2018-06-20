@@ -449,7 +449,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     if (need_write_dictionary)
     {
         /// Write global dictionary if it wasn't written and has too many keys.
-        UInt64 num_keys = settings.max_dictionary_size;
+        UInt64 num_keys = unique_state.limit;
         writeIntBinary(num_keys, *keys_stream);
         removeNullable(dictionary_type)->serializeBinaryBulk(*unique_state.column, *keys_stream, unique_state.offset, num_keys);
     }
@@ -562,11 +562,11 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
             if (indexes_stream->eof())
                 break;
 
-            IndexesSerializationType index_version;
-            index_version.deserialize(*indexes_stream);
-
             if (!state_with_dictionary->global_dictionary)
                 readDictionary();
+
+            IndexesSerializationType index_version;
+            index_version.deserialize(*indexes_stream);
 
             if (index_version.has_additional_keys)
                 readAdditionalKeys();
