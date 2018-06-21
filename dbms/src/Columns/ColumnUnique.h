@@ -395,6 +395,7 @@ void ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeImpl(
                         (*secondary_index)[StringRefWrapper<ColumnType>(src_column, row)] = next_position;
                         ++next_position;
                     }
+                    else
                         positions[i] = jt->second;
                 }
                 else
